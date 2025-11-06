@@ -6,6 +6,7 @@ This project sets up a Google Cloud GKE Cluster with a Gateway Controller and an
 
 [Enabling IAP for GKE Gateway Controller](https://cloud.google.com/kubernetes-engine/docs/how-to/configure-gateway-resources#configure_iap)
 [Secure a Gateway](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/secure-gateway)
+[GatewayClass Support for IAP](https://cloud.google.com/kubernetes-engine/docs/how-to/gatewayclass-capabilities#additional-services)
 
 ## Google Disclaimer
 This is not an officially supported Google product
