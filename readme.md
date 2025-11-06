@@ -23,6 +23,7 @@ export ZONE= #e.g. us-central1-c
 export NETWORK_NAME= #e.g. demo-network
 export SUBNET_RANGE= #e.g. 10.128.0.0/20 
 export FQDN= #e.g. test.example.com
+export WORKFORCE_POOL_NAME= #Optional: e.g. locations/global/workforcePools/okta-workforce-pool
 
 #Create Project
 gcloud config unset project
@@ -132,6 +133,7 @@ gcloud builds submit \
 ```bash
 gcloud compute ssl-certificates create gkeiap-cert \
     --domains=$FQDN \
+    --project=$PROJECT_ID \
     --global
 ```
 
@@ -143,8 +145,69 @@ sed -i '' "s#\[IMAGE_REFERENCE\]#${IMAGE_REFERENCE}#g" deployment.yaml
 kubectl apply -f ./deployment.yaml
 ```
 
-## Manually Enable IAP
+## Optional: Manually Enable IAP
 ![Enable IAP](./images/enable-iap.png "Enable IAP")
+
+## Optional: Enable IAP with Workforce Identity Authentication
+```bash
+# OAuth Configuration
+OAUTH_CLIENT_NAME=iap-workforce-client
+OAUTH_CLIENT_CREDENTIAL_NAME=iap-workforce-credential
+gcloud iam oauth-clients create $OAUTH_CLIENT_NAME \
+    --project=$PROJECT_ID \
+    --location=global \
+    --client-type="CONFIDENTIAL_CLIENT" \
+    --display-name="OAuth for Workforce Identity" \
+    --description="OAuth for Workforce Identity" \
+    --allowed-scopes="https://www.googleapis.com/auth/cloud-platform" \
+    --allowed-redirect-uris="https://temp.com" \
+    --allowed-grant-types="authorization_code_grant"
+
+OAUTH_CLIENT_ID=$(gcloud iam oauth-clients describe $OAUTH_CLIENT_NAME \
+    --project $PROJECT_ID \
+    --format 'value(clientId)' \
+    --location global)
+
+gcloud iam oauth-clients update $OAUTH_CLIENT_NAME \
+    --project=$PROJECT_ID \
+    --location=global \
+    --allowed-redirect-uris="https://iap.googleapis.com/v1/oauth/clientIds/$OAUTH_CLIENT_ID:handleRedirect"
+
+gcloud iam oauth-clients credentials create $OAUTH_CLIENT_CREDENTIAL_NAME \
+    --oauth-client=$OAUTH_CLIENT_NAME \
+    --project=$PROJECT_ID \
+    --display-name='IAP Workforce Credential' \
+    --location='global'
+
+OAUTH_CLIENT_SECRET=$(gcloud iam oauth-clients credentials describe $OAUTH_CLIENT_CREDENTIAL_NAME \
+    --oauth-client=$OAUTH_CLIENT_NAME \
+    --project=$PROJECT_ID \
+    --format 'value(clientSecret)' \
+    --location='global')
+
+#IAP Configuration
+printf 'y' |  gcloud services enable iap.googleapis.com --project=$PROJECT_ID
+
+cat <<EOF > iap_settings.yaml
+access_settings:
+  identity_sources: ["WORKFORCE_IDENTITY_FEDERATION"]
+  workforce_identity_settings:
+    workforce_pools: ["$WORKFORCE_POOL_NAME"]
+    oauth2:
+      client_id: "$OAUTH_CLIENT_ID"
+      client_secret: "$OAUTH_CLIENT_SECRET"
+EOF
+
+gcloud iap settings set iap_settings.yaml \
+  --project=$PROJECT_ID \
+  --resource-type=iap_web
+
+#Grants Access to All Identities in Pool
+gcloud iap web add-iam-policy-binding \
+    --member=principalSet://iam.googleapis.com/$WORKFORCE_POOL_NAME/* \
+    --role='roles/iap.httpsResourceAccessor' \
+    --project=$PROJECT_ID
+```
 
 ## Clean Up
 ```bash
